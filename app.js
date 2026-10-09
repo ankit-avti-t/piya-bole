@@ -1,12 +1,12 @@
 const SERVER_ORIGIN = window.location.protocol === "file:" ? "http://localhost:3000" : window.location.origin;
 const API = `${SERVER_ORIGIN}/api`;
 const token = () => localStorage.getItem("orbit-token");
-const state = { user: JSON.parse(localStorage.getItem("orbit-user") || "null"), users: [], recentSearches: JSON.parse(localStorage.getItem("piya-recent-searches") || "[]"), customBots: JSON.parse(localStorage.getItem("piya-custom-bots") || "[]"), cryptoPrivateKey: null, cryptoReady: false, chatbotEditingId: null, messageMenuId: null, reactionMessageId: null, editingMessageId: null, searchResults: [], active: null, messages: [], authMode: "login", socket: null, profileTarget: null, profileDraftMedia: [], profileDraftPicture: "", onboarding: Number(localStorage.getItem("orbit-onboarding-step") || "0"), pendingAttachment: null, unread: {}, settingsOpen: false, sidebarWidth: Number(localStorage.getItem("piya-sidebar-width") || "335"), sidebarCollapsed: localStorage.getItem("piya-sidebar-collapsed") === "true", sidebarHidden: localStorage.getItem("piya-sidebar-hidden") === "true" };
+const state = { user: JSON.parse(localStorage.getItem("orbit-user") || "null"), users: [], friends: [], groups: [], recentSearches: JSON.parse(localStorage.getItem("piya-recent-searches") || "[]"), customBots: JSON.parse(localStorage.getItem("piya-custom-bots") || "[]"), cryptoPrivateKey: null, cryptoReady: false, chatbotEditingId: null, messageMenuId: null, reactionMessageId: null, editingMessageId: null, searchResults: [], active: null, messages: [], authMode: "login", view: "chats", groupCreator: false, groupType: "", socket: null, profileTarget: null, profileDraftMedia: [], profileDraftPicture: "", onboarding: Number(localStorage.getItem("orbit-onboarding-step") || "0"), pendingAttachment: null, sharedFilter: null, unread: {}, settingsOpen: false, sidebarWidth: Number(localStorage.getItem("piya-sidebar-width") || "335"), sidebarCollapsed: localStorage.getItem("piya-sidebar-collapsed") === "true", sidebarHidden: localStorage.getItem("piya-sidebar-hidden") === "true" };
 const bots = [
   { id: "bot-orbit", name: "Piya AI", initials: "AI", profilePic: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%23ff6f61'/%3E%3Cstop offset='1' stop-color='%237657f6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='34' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='58' r='31' fill='%23fff' opacity='.95'/%3E%3Ccircle cx='49' cy='55' r='5' fill='%2324143f'/%3E%3Ccircle cx='71' cy='55' r='5' fill='%2324143f'/%3E%3Cpath d='M47 70c8 8 18 8 26 0' fill='none' stroke='%2324143f' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M60 23v-9M55 14h10' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E", bot: true, online: true, description: "Your helpful chat assistant" },
   { id: "bot-focus", name: "Focus Coach", initials: "FC", profilePic: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%232fc9a0'/%3E%3Cstop offset='1' stop-color='%233879e8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='34' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='58' r='31' fill='%23fff' opacity='.95'/%3E%3Cpath d='M43 53h15M62 53h15' stroke='%2324143f' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M47 72h26' stroke='%2324143f' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M60 22v-7M54 15h12' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E", bot: true, online: true, description: "Plan your day and stay focused" }
 ];
-const botMessages = JSON.parse(localStorage.getItem("orbit-bot-messages") || "{}");
+let botMessages = JSON.parse(localStorage.getItem("orbit-bot-messages") || "{}");
 const avatarChoices = ["🪐", "🌙", "⚡", "🌈", "🦋", "🐼", "🦊", "🐸", "👾", "🔥", "🌻", "🎧"];
 function allBots() { return [...state.customBots, ...bots]; }
 function nextChatbotName() {
@@ -14,8 +14,27 @@ function nextChatbotName() {
   while (state.customBots.some(bot => bot.name.toLowerCase() === `chatbot${number}`)) number += 1;
   return `Chatbot${number}`;
 }
-function saveCustomBots() { localStorage.setItem("piya-custom-bots", JSON.stringify(state.customBots)); }
-function saveRecentSearches() { localStorage.setItem("piya-recent-searches", JSON.stringify(state.recentSearches)); }
+function accountStatePayload() {
+  return {
+    customBots: state.customBots,
+    botMessages,
+    recentSearches: state.recentSearches,
+    view: state.view,
+    sidebarWidth: state.sidebarWidth,
+    sidebarCollapsed: state.sidebarCollapsed,
+    sidebarHidden: state.sidebarHidden,
+    activeId: state.active?.id || null
+  };
+}
+async function saveAccountState() {
+  localStorage.setItem("piya-account-state", JSON.stringify(accountStatePayload()));
+  if (!state.user || !token()) return;
+  try { await request("/account-state", { method: "PATCH", body: JSON.stringify({ state: accountStatePayload() }) }); }
+  catch (error) { console.error("Could not save account state:", error); }
+}
+function saveCustomBots() { localStorage.setItem("piya-custom-bots", JSON.stringify(state.customBots)); void saveAccountState(); }
+function saveRecentSearches() { localStorage.setItem("piya-recent-searches", JSON.stringify(state.recentSearches)); void saveAccountState(); }
+function saveUiState() { void saveAccountState(); }
 function addRecentSearch(user) {
   state.recentSearches = [user, ...state.recentSearches.filter(item => item.id !== user.id)].slice(0, 8);
   saveRecentSearches();
@@ -122,6 +141,7 @@ function escapeHtml(value) { return String(value).replace(/[&<>"']/g, x => ({ "&
 function dobMaximum() { const date = new Date(); date.setFullYear(date.getFullYear() - 13); return date.toISOString().slice(0, 10); }
 function profilePictureContent(profile) {
   if (profile.profilePic) return `<img src="${escapeHtml(profile.profilePic)}" alt="${escapeHtml(profile.name || "Profile picture")}">`;
+  if (profile.avatar) return `<span class="profile-avatar-fallback" role="img" aria-label="${escapeHtml(profile.name || "Profile avatar")}">${escapeHtml(profile.avatar)}</span>`;
   return `<span class="no-dp-placeholder" aria-label="No profile picture"><span>✦</span></span>`;
 }
 function formatLastSeen(value) {
@@ -135,6 +155,15 @@ function showToast(message) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 5000);
+}
+function showWarning(message) {
+  document.querySelector(".warning-toast")?.remove();
+  const warning = document.createElement("div");
+  warning.className = "warning-toast";
+  warning.setAttribute("role", "alert");
+  warning.textContent = message;
+  document.body.appendChild(warning);
+  setTimeout(() => warning.remove(), 5000);
 }
 function profileFromId(profileId) {
   if (profileId === state.user?.id) return state.user;
@@ -161,9 +190,22 @@ function closeProfile(fromHistory = false) {
 function render() {
   const app = document.getElementById("app");
   const initialRender = !app.firstElementChild;
-  app.innerHTML = state.user ? (state.onboarding ? renderOnboarding() : `${renderApp()}${renderProfileModal()}`) : renderAuth();
+  app.innerHTML = state.user ? (state.onboarding ? renderOnboarding() : `${renderApp()}${renderProfileModal()}${renderGroupCreator()}${renderMemberManager()}`) : renderAuth();
   if (initialRender) app.firstElementChild?.classList.add("initial-render");
   attachEvents();
+}
+function renderGroupCreator() {
+  if (!state.groupCreator) return "";
+  const people = state.users.filter(user => user.id !== state.user.id);
+  return `<div class="group-modal" role="dialog" aria-modal="true"><form class="group-card" id="group-form"><div class="editing-window-header"><div><span class="eyebrow">GROUPS</span><strong>Create group</strong></div><button type="button" class="editing-close group-close" data-close-group aria-label="Close group creator">×</button></div><div class="eyebrow">NEW CONVERSATION</div><h2>What kind of group?</h2><p>Choose who can access your group chat.</p><div class="group-types"><label class="${state.groupType === "private" ? "selected" : ""}"><input type="radio" name="groupType" value="private" ${state.groupType === "private" ? "checked" : ""} required><strong>Private group</strong><span>Only selected friends can join.</span></label><label class="${state.groupType === "open" ? "selected" : ""}"><input type="radio" name="groupType" value="open" ${state.groupType === "open" ? "checked" : ""} required><strong>Open group</strong><span>Everyone in Piya can discover and join.</span></label></div><label class="group-field">GROUP NAME<input name="groupName" maxlength="60" placeholder="e.g. Design team" required></label><div class="group-field"><span class="group-member-label">ADD FRIENDS <small>Select one or more</small></span>${people.length ? people.map(user => `<label class="group-member"><input type="checkbox" name="members" value="${user.id}"><span class="group-check"></span>${avatar(user, user.id)}<span>${escapeHtml(user.name)} <small>@${escapeHtml(user.username)}</small></span></label>`).join("") : '<p class="group-empty">Search for friends first, then create a group.</p>'}</div><button class="primary-btn" type="submit">Create group <span>→</span></button></form></div>`;
+}
+function renderMemberManager() {
+  if (!state.memberManager) return "";
+  const group = state.groups.find(item => item.id === state.memberManager);
+  if (!group) return "";
+  const members = new Set(group.memberIds);
+  const people = state.users.filter(user => !members.has(user.id));
+  return `<div class="group-modal" role="dialog" aria-modal="true"><form class="group-card" id="member-form"><div class="editing-window-header"><div><span class="eyebrow">GROUP MEMBERS</span><strong>Add members</strong></div><button type="button" class="editing-close" data-close-members aria-label="Close add members">×</button></div><p>Add friends to <strong>${escapeHtml(group.name)}</strong>.</p><div class="group-field">${people.length ? people.map(user => `<label class="group-member"><input type="checkbox" name="members" value="${user.id}"><span class="group-check"></span>${avatar(user, user.id)}<span>${escapeHtml(user.name)} <small>@${escapeHtml(user.username)}</small></span></label>`).join("") : '<p class="group-empty">All available friends are already members.</p>'}</div><button class="primary-btn" type="submit" ${people.length ? "" : "disabled"}>Add selected members <span>→</span></button></form></div>`;
 }
 
 function renderAuth(error = "", values = {}, passwordError = false) {
@@ -181,6 +223,10 @@ function renderOnboarding(error = "") {
       : `<div class="onboarding-icon">✨</div><h1>Add your body count</h1><p>This is optional and private by default. You choose whether to show it later.</p><input id="onboarding-body-count" class="onboarding-input" value="${escapeHtml(state.user.bodyCount || "")}" maxlength="20" placeholder="Leave blank if you prefer">`;
   return `<main class="onboarding-page"><section class="onboarding-card"><div class="card-brand"><span class="brand-mark">${icons.logo}</span><div><span>piya</span><small>sab bolenge</small></div></div><div class="onboarding-progress">${labels}</div>${error ? `<div class="form-error">${escapeHtml(error)}</div>` : ""}${content}<div class="onboarding-actions"><button type="button" class="secondary-btn" data-onboarding-skip>Skip</button><button type="button" class="primary-btn" data-onboarding-next>${step === steps.length - 1 ? "Finish and enter Piya" : "Continue"} <span>→</span></button></div><p class="onboarding-note">You can edit these details later from your profile.</p></section></main>`;
 }
+function renderSectionView() {
+  if (state.view === "work") return `<div class="section-view"><div class="section-view-title"><div><span class="eyebrow">YOUR SPACE</span><h2>Work</h2><p>Keep project conversations close.</p></div><button class="primary-btn compact-btn" type="button" data-open-group>Create group</button></div><div class="section-view-grid">${state.groups.filter(group => group.name.toLowerCase().includes("work") || group.type === "private").map(group => `<button class="section-card" type="button" data-group-id="${group.id}"><strong>${escapeHtml(group.name)}</strong><span>${group.type === "open" ? "Open group" : "Private group"}</span></button>`).join("") || '<div class="section-empty">No work groups yet. Create one to get started.</div>'}</div></div>`;
+  return `<div class="section-view"><div class="section-view-title"><div><span class="eyebrow">PEOPLE</span><h2>Friends</h2><p>Choose a friend to open a conversation.</p></div></div><div class="friends-grid">${state.friends.map(user => `<button class="friend-card" type="button" data-user="${user.id}">${avatar(user, user.id)}<span><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.username)}</small></span></button>`).join("") || '<div class="section-empty">No other users are registered yet.</div>'}</div></div>`;
+}
 function renderApp() {
   const active = state.active || allBots()[0];
   const me = { initials: initials(state.user.name), avatar: state.user.avatar, profilePic: state.user.profilePic };
@@ -191,7 +237,17 @@ function renderApp() {
   const chatbotList = allBots();
   const recentMarkup = state.recentSearches.length ? `<div class="recent-searches">${state.recentSearches.map(user => `<div class="recent-search-item" data-recent-user="${user.id}">${avatar(user, user.id)}<span>${escapeHtml(user.name)}<small>@${escapeHtml(user.username || "")}</small></span><button type="button" data-remove-recent="${user.id}" aria-label="Remove ${escapeHtml(user.username || user.name)} from recent searches">×</button></div>`).join("")}</div>` : "";
   const groupMembers = [active, ...state.users].filter(Boolean).slice(0, 6);
-  return `<main class="app-shell ${sidebarClass}" style="--sidebar-width:${state.sidebarWidth}px"><aside class="sidebar"><div class="sidebar-top"><div class="brand"><span class="brand-mark">${icons.logo}</span><div class="brand-copy"><div class="brand-name">piya</div><div class="brand-tag">sab bolenge</div></div>${sidebarControls}</div><div class="profile ${state.settingsOpen ? "settings-open" : ""}" data-profile-swipe>${avatar(me)}<div class="profile-copy"><div class="profile-name">${escapeHtml(state.user.name)}</div><div class="profile-status"><span class="online-dot"></span> Available</div></div><button class="settings-btn" title="Settings" data-account>${icon("more")}</button>${settingsMenu}</div></div><div class="search-users"><input id="user-search" placeholder="Search username..." autocomplete="off"><div class="search-results">${state.searchResults.map(user => chatItem(user, active)).join("")}</div></div><div class="section-label section-heading"><span>Chatbots</span><button type="button" class="add-chatbot" data-add-chatbot title="Add chatbot">+</button></div><div class="chat-list">${chatbotList.map(user => chatItem(user, active)).join("")}</div><div class="section-label">Your chats</div><div class="chat-list">${state.users.map(user => chatItem(user, active)).join("") || '<div class="empty-state" style="padding:16px 23px;color:#8391ae;font-size:12px">No friends here yet.<br>Search for a username to start.</div>'}</div></aside><section class="chat-area"><div class="home-topbar"><div class="global-search"><span>${icon("search")}</span><input id="global-user-search" placeholder="Search usernames..." autocomplete="off"><div class="global-search-results">${state.searchResults.map(user => chatItem(user, active)).join("")}${recentMarkup}</div></div><button type="button" class="top-account-btn" data-signout>Sign out</button></div>${showSidebarButton}${active ? renderConversation(active) : ""}</section><aside class="info-panel"><div class="info-panel-head"><h2>Group info</h2><button type="button" class="info-close" aria-label="Close group info">×</button></div><div class="info-profile">${active ? avatar(active, active.bot ? "" : active.id) : ""}<h3>${escapeHtml(active?.name || "Your conversation")}</h3><p>${active?.bot ? "AI assistant" : `${groupMembers.length || 1} members, ${Math.max(1, groupMembers.length - 1)} online`}</p></div><div class="info-section"><div class="info-label">Shared files</div><button class="info-row" type="button"><span class="info-icon">▧</span><span>Photos</span><b>24</b><span>⌄</span></button><button class="info-row" type="button"><span class="info-icon">▱</span><span>Videos</span><b>13</b><span>⌄</span></button><button class="info-row" type="button"><span class="info-icon">□</span><span>Files</span><b>38</b><span>⌄</span></button><button class="info-row" type="button"><span class="info-icon">♫</span><span>Audio files</span><b>8</b><span>⌄</span></button><button class="info-row" type="button"><span class="info-icon">↗</span><span>Shared links</span><b>12</b><span>⌄</span></button></div><div class="info-section members-section"><div class="info-label">${groupMembers.length} members</div>${groupMembers.map(member => `<button class="member-row" type="button" data-user="${member.id}">${avatar(member, member.bot ? "" : member.id)}<span>${escapeHtml(member.name)}</span></button>`).join("")}</div></aside></main>`;
+  const sharedFiles = state.messages.filter(message => {
+    if (!message.attachment || !state.sharedFilter) return Boolean(message.attachment);
+    const type = message.attachment.type;
+    if (state.sharedFilter === "photos") return type.startsWith("image/");
+    if (state.sharedFilter === "videos") return type.startsWith("video/");
+    if (state.sharedFilter === "audio") return type.startsWith("audio/");
+    return !/^(image|video|audio)\//.test(type);
+  });
+  const sharedPreview = state.sharedFilter ? `<div class="shared-preview"><div class="shared-preview-head"><strong>${state.sharedFilter[0].toUpperCase() + state.sharedFilter.slice(1)}</strong><button type="button" data-close-shared>×</button></div>${sharedFiles.length ? sharedFiles.map(message => `<button class="shared-file-item" type="button" data-shared-message="${messageKey(message)}">${message.attachment.type.startsWith("image/") ? `<img src="${escapeHtml(message.attachment.data)}" alt="${escapeHtml(message.attachment.name)}">` : `<span class="shared-file-icon">📎</span>`}<span>${escapeHtml(message.attachment.name)}</span></button>`).join("") : '<p class="shared-empty">No shared files of this type yet.</p>'}</div>` : "";
+  const friendToggle = active && !active.bot && !active.group ? `<button type="button" class="friend-toggle ${state.friends.some(user => user.id === active.id) ? "is-friend" : ""}" data-toggle-friend="${active.id}">${state.friends.some(user => user.id === active.id) ? "★ Disfriend" : "☆ Add to friends"}</button>` : "";
+  return `<main class="app-shell ${sidebarClass}" style="--sidebar-width:${state.sidebarWidth}px"><nav class="nav-rail" aria-label="Primary navigation"><div class="nav-logo">${icons.logo}</div><button class="nav-item ${state.view === "chats" ? "active" : ""}" type="button" data-view="chats"><span>▰</span><small>Chats</small></button><button class="nav-item ${state.view === "work" ? "active" : ""}" type="button" data-view="work"><span>▣</span><small>Work</small></button><button class="nav-item ${state.view === "friends" ? "active" : ""}" type="button" data-view="friends"><span>▱</span><small>Friends</small></button><button class="nav-item nav-bottom" type="button" data-profile><span>●</span><small>Profile</small></button><button class="nav-item" type="button" data-signout><span>⇥</span><small>Log out</small></button></nav><aside class="sidebar"><div class="sidebar-top"><div class="brand"><span class="brand-mark">${icons.logo}</span><div class="brand-copy"><div class="brand-name">piya</div><div class="brand-tag">sab bolenge</div></div>${sidebarControls}</div><div class="profile ${state.settingsOpen ? "settings-open" : ""}" data-profile-swipe>${avatar(me)}<div class="profile-copy"><div class="profile-name">${escapeHtml(state.user.name)}</div><div class="profile-status"><span class="online-dot"></span> Available</div></div><button class="settings-btn" title="Settings" data-account>${icon("more")}</button>${settingsMenu}</div></div><div class="search-users"><input id="user-search" placeholder="Search username..." autocomplete="off"><div class="search-results">${state.searchResults.map(user => chatItem(user, active)).join("")}</div></div><div class="section-label section-heading"><span>Chatbots</span><button type="button" class="add-chatbot" data-add-chatbot title="Add chatbot">+</button></div><div class="chat-list">${chatbotList.map(user => chatItem(user, active)).join("")}</div><div class="section-label section-heading"><span>Groups</span><button type="button" class="add-chatbot" data-open-group title="Create group">+</button></div><div class="chat-list">${state.groups.map(group => `<div class="chat-item ${active?.id === group.id ? "active" : ""}" data-group-id="${group.id}"><div class="avatar group-avatar">#</div><div class="chat-info"><div class="chat-name-row"><span class="chat-name">${escapeHtml(group.name)}</span></div><div class="chat-preview">${group.type === "open" ? "Open group" : "Private group"}</div></div></div>`).join("") || '<div class="empty-state" style="padding:10px 16px;color:#8391ae;font-size:12px">No groups yet.</div>'}</div><div class="section-label">Your chats</div><div class="chat-list">${state.users.map(user => chatItem(user, active)).join("") || '<div class="empty-state" style="padding:16px 23px;color:#8391ae;font-size:12px">No friends here yet.<br>Search for a username to start.</div>'}</div></aside><section class="chat-area"><div class="home-topbar"><div class="global-search"><span>${icon("search")}</span><input id="global-user-search" placeholder="Search usernames..." autocomplete="off"><div class="global-search-results">${state.searchResults.map(user => chatItem(user, active)).join("")}${recentMarkup}</div></div><button type="button" class="top-account-btn" data-signout>Sign out</button></div>${showSidebarButton}${state.view === "chats" ? (active ? renderConversation(active) : "") : renderSectionView()}</section><aside class="info-panel"><div class="info-panel-head"><h2>${active?.group ? "Group info" : "Chat info"}</h2><button type="button" class="info-close" aria-label="Close group info">×</button></div><div class="info-profile">${active ? avatar(active, active.bot || active.group ? "" : active.id) : ""}<h3>${escapeHtml(active?.name || "Your conversation")}</h3><p>${active?.group ? `${active.memberIds.length} members` : active?.bot ? "AI assistant" : `${groupMembers.length || 1} members, ${Math.max(1, groupMembers.length - 1)} online`}</p>${friendToggle}</div></aside></main>`;
 }
 function renderProfileModal() {
   const profile = state.profileTarget || state.user;
@@ -214,17 +270,18 @@ function renderProfileModal() {
   const backControl = viewingOwnProfile ? '<button class="profile-back" data-back-profile aria-label="Go back">← <span>Back</span></button>' : '<button class="modal-close" data-close-profile aria-label="Close profile">×</button>';
   const cover = viewingOwnProfile ? "" : '<div class="profile-cover"></div>';
   const profileLeft = state.sidebarHidden ? 0 : (state.sidebarCollapsed ? 76 : state.sidebarWidth);
-  return `<div class="${profileClass}" id="profile-modal" style="--profile-left:${profileLeft}px" aria-hidden="${state.profileTarget ? "false" : "true"}"><div class="profile-card profile-public-card">${backControl}${cover}<div class="profile-card-head"><div class="profile-avatar-stage" data-avatar-stage><div class="profile-picture">${profilePictureContent({ ...profile, profilePic })}</div></div><div><div class="eyebrow">${editing ? "YOUR PIYA PROFILE" : (profile.profilePublic === false && !isOwner ? "PRIVATE PROFILE" : "PIYA PROFILE")}</div><h2>${escapeHtml(profile.name || "Piya user")}</h2><p>@${escapeHtml(profile.username || "")}</p></div></div>${!editing && !showProfile ? '<div class="private-profile">This profile is private.</div>' : ""}${showProfile ? `<div class="public-details">${details || '<div class="private-profile">You have not added public details yet.</div>'}</div><div class="profile-media visible" id="profile-media">${mediaMarkup || '<div class="private-profile">No profile media yet.</div>'}</div>` : ""}${viewingOwnProfile ? '<button class="primary-btn profile-edit-btn" data-edit-profile>Edit profile</button>' : ""}${editing ? `<div class="avatar-picker"><div class="avatar-picker-label">Choose an avatar <span>optional</span></div><button type="button" data-avatar="" class="${!profile.avatar ? "selected" : ""}" aria-label="Remove avatar">＋</button>${avatarChoices.map(choice => `<button type="button" data-avatar="${choice}" class="${profile.avatar === choice ? "selected" : ""}">${choice}</button>`).join("")}</div><div class="profile-fields"><label>PROFILE PICTURE <span>optional</span><input id="profile-picture-input" type="file" accept="image/*"><button type="button" class="secondary-btn" data-remove-picture ${profilePic ? "" : "disabled"}>Remove picture</button></label><label>GENDER <span>optional</span><input id="profile-gender" value="${escapeHtml(profile.gender || "")}" placeholder="How do you identify?"></label><label>BIO <span>optional</span><textarea id="profile-bio" maxlength="160" placeholder="A little about you...">${escapeHtml(profile.bio || "")}</textarea></label><label>BODY COUNT <span>optional</span><input id="profile-body-count" value="${escapeHtml(profile.bodyCount || "")}" placeholder="Keep private if you prefer"></label><label>PROFILE MEDIA <span>up to 4 images or videos (1–7 seconds)</span><input id="profile-media-input" type="file" accept="image/*,video/*" multiple><div id="profile-media-editor" class="profile-media-editor">${mediaEditorMarkup || "No media selected."}</div></label></div><div class="visibility-list"><div>Profile visibility</div><label><input type="checkbox" id="profile-public" ${profile.profilePublic !== false ? "checked" : ""}> Public profile</label><div>Show on your profile</div><label><input type="checkbox" id="show-gender" ${profile.visibility?.gender !== false ? "checked" : ""}> Gender</label><label><input type="checkbox" id="show-bio" ${profile.visibility?.bio !== false ? "checked" : ""}> Bio</label><label><input type="checkbox" id="show-body-count" ${profile.visibility?.bodyCount === true ? "checked" : ""}> Body count</label></div><button class="primary-btn" data-save-profile>Save profile</button>` : ""}</div></div>`;
+  const editHeader = editing ? '<div class="editing-window-header"><div><span class="eyebrow">PROFILE</span><strong>Edit profile</strong></div><button type="button" class="editing-close" data-close-profile aria-label="Close profile editor">×</button></div>' : "";
+  return `<div class="${profileClass}" id="profile-modal" style="--profile-left:${profileLeft}px" aria-hidden="${state.profileTarget ? "false" : "true"}"><div class="profile-card profile-public-card">${editHeader}${backControl}${cover}<div class="profile-card-head"><div class="profile-avatar-stage" data-avatar-stage><div class="profile-picture">${profilePictureContent({ ...profile, profilePic })}</div></div><div><div class="eyebrow">${editing ? "YOUR PIYA PROFILE" : (profile.profilePublic === false && !isOwner ? "PRIVATE PROFILE" : "PIYA PROFILE")}</div><h2>${escapeHtml(profile.name || "Piya user")}</h2><p>@${escapeHtml(profile.username || "")}</p></div></div>${!editing && !showProfile ? '<div class="private-profile">This profile is private.</div>' : ""}${showProfile ? `<div class="public-details">${details || '<div class="private-profile">You have not added public details yet.</div>'}</div><div class="profile-media visible" id="profile-media">${mediaMarkup || '<div class="private-profile">No profile media yet.</div>'}</div>` : ""}${viewingOwnProfile ? '<button class="primary-btn profile-edit-btn" data-edit-profile>Edit profile</button>' : ""}${editing ? `<div class="avatar-picker"><div class="avatar-picker-label">Choose an avatar <span>optional</span></div><button type="button" data-avatar="" class="${!profile.avatar ? "selected" : ""}" aria-label="Remove avatar">＋</button>${avatarChoices.map(choice => `<button type="button" data-avatar="${choice}" class="${profile.avatar === choice ? "selected" : ""}">${choice}</button>`).join("")}</div><div class="profile-fields"><label>PROFILE PICTURE <span>optional</span><input id="profile-picture-input" type="file" accept="image/*"><button type="button" class="secondary-btn" data-remove-picture ${profilePic ? "" : "disabled"}>Remove picture</button></label><label>GENDER <span>optional</span><input id="profile-gender" value="${escapeHtml(profile.gender || "")}" placeholder="How do you identify?"></label><label>BIO <span>optional</span><textarea id="profile-bio" maxlength="160" placeholder="A little about you...">${escapeHtml(profile.bio || "")}</textarea></label><label>BODY COUNT <span>optional</span><input id="profile-body-count" value="${escapeHtml(profile.bodyCount || "")}" placeholder="Keep private if you prefer"></label><label>PROFILE MEDIA <span>up to 4 images or videos (1–7 seconds)</span><input id="profile-media-input" type="file" accept="image/*,video/*" multiple><div id="profile-media-editor" class="profile-media-editor">${mediaEditorMarkup || "No media selected."}</div></label></div><div class="visibility-list"><div>Profile visibility</div><label><input type="checkbox" id="profile-public" ${profile.profilePublic !== false ? "checked" : ""}> Public profile</label><div>Show on your profile</div><label><input type="checkbox" id="show-gender" ${profile.visibility?.gender !== false ? "checked" : ""}> Gender</label><label><input type="checkbox" id="show-bio" ${profile.visibility?.bio !== false ? "checked" : ""}> Bio</label><label><input type="checkbox" id="show-body-count" ${profile.visibility?.bodyCount === true ? "checked" : ""}> Body count</label></div><button class="primary-btn" data-save-profile>Save profile</button>` : ""}</div></div>`;
 }
 function chatItem(user, active) {
   const unread = state.unread[user.id] || 0;
   if (user.bot && state.chatbotEditingId === user.id) return `<div class="chat-item chatbot-editing ${active?.id === user.id ? "active" : ""}" data-user="${user.id}">${avatar(user)}<div class="chat-info"><input class="chatbot-name-input" data-chatbot-name="${user.id}" value="${escapeHtml(user.name)}" maxlength="40" aria-label="Chatbot name"></div></div>`;
-  return `<div class="chat-item ${active?.id === user.id ? "active" : ""}" data-user="${user.id}">${avatar(user, user.bot ? "" : user.id)}<div class="chat-info"><div class="chat-name-row"><span class="chat-name">${escapeHtml(user.name)}</span><span class="chat-time">${unread ? `<b class="unread-badge">${unread}</b>` : ""}</span></div><div class="chat-preview">${user.bot ? user.description : "Open conversation to message"}</div></div></div>`;
+  return `<div class="chat-item ${active?.id === user.id ? "active" : ""}" data-user="${user.id}">${avatar(user, user.bot ? "" : user.id)}<div class="chat-info"><div class="chat-name-row"><span class="chat-name">${escapeHtml(user.name)}</span><span class="chat-time">${unread ? `<b class="unread-badge">${unread}</b>` : ""}</span></div><div class="chat-preview">${user.bot ? escapeHtml(user.description) : `<span class="search-username">@${escapeHtml(user.username || "")}</span>`}</div></div></div>`;
 }
 function renderConversation(active) {
   const attachment = state.pendingAttachment ? `<div class="attachment-chip">${escapeHtml(state.pendingAttachment.name)}<button type="button" data-remove-attachment>×</button></div>` : "";
-  const headerSubtitle = active.bot ? "AI assistant" : `<span class="chat-username">@${escapeHtml(active.username || "")}</span><span class="header-presence">${formatLastSeen(active.lastSeenAt)}</span><span class="encryption-badge">🔒 End-to-end encrypted</span>`;
-  return `<header class="chat-header">${avatar(active, active.bot ? "" : active.id)}<div><div class="header-name">${escapeHtml(active.name)}</div><div class="header-status">${headerSubtitle}</div></div><div class="header-actions"><button class="icon-btn" title="Search" data-search>${icon("search")}</button><button class="icon-btn" title="Delete conversation" data-delete-conversation>${icon("more")}</button><button class="icon-btn" title="Audio call">${icon("phone")}</button><button class="icon-btn" title="Video call">${icon("video")}</button></div></header><div class="messages" id="messages"><div class="day-label">Conversation</div>${state.messages.length ? state.messages.map(messageHtml).join("") : '<div class="empty-state"><h3>Say hello 👋</h3><p>Start a private conversation with your friend.</p></div>'}</div><div class="composer-wrap">${attachment}<form class="composer" id="composer"><button type="button" class="icon-btn" title="Attach a photo, video, document, or ZIP file" data-attach>${icon("paperclip")}</button><input id="file-input" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar,.7z" hidden><input id="message-input" autocomplete="off" placeholder="Write a message..." /><button class="send-btn" title="Send message" type="submit">${icon("send")}<span>Send</span></button></form></div>`;
+  const headerSubtitle = active.group ? `${active.type === "open" ? "Open group" : "Private group"} · ${active.memberIds.length} members` : active.bot ? "AI assistant" : `<span class="chat-username">@${escapeHtml(active.username || "")}</span><span class="header-presence">${formatLastSeen(active.lastSeenAt)}</span><span class="encryption-badge">🔒 End-to-end encrypted</span>`;
+  return `<header class="chat-header">${avatar(active, active.bot || active.group ? "" : active.id)}<div><div class="header-name">${escapeHtml(active.name)}</div><div class="header-status">${headerSubtitle}</div></div><div class="header-actions"><button class="icon-btn" title="Search" data-search>${icon("search")}</button>${active.group ? "" : `<button class="icon-btn" title="Delete conversation" data-delete-conversation>${icon("more")}</button>`}<button class="icon-btn" title="Audio call">${icon("phone")}</button><button class="icon-btn" title="Video call">${icon("video")}</button></div></header><div class="messages" id="messages"><div class="day-label">Conversation</div>${state.messages.length ? state.messages.map(messageHtml).join("") : '<div class="empty-state"><h3>Say hello 👋</h3><p>Start a private conversation with your friend.</p></div>'}</div><div class="composer-wrap">${attachment}<form class="composer" id="composer"><button type="button" class="icon-btn" title="Attach a photo, video, document, or ZIP file" data-attach>${icon("paperclip")}</button><input id="file-input" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar,.7z" hidden><input id="message-input" autocomplete="off" placeholder="Write a message..." /><button class="send-btn" title="Send message" type="submit">${icon("send")}<span>Send</span></button></form></div>`;
 }
 function messageHtml(message) {
   const messageId = messageKey(message);
@@ -240,12 +297,17 @@ function messageHtml(message) {
   const content = editing
     ? `<div class="message-edit"><textarea data-edit-input="${messageId}" maxlength="4000">${escapeHtml(message.text || "")}</textarea><div><button type="button" data-cancel-edit="${messageId}">Cancel</button><button type="button" data-save-edit="${messageId}" class="save-edit">Save</button></div></div>`
     : `<div class="bubble">${escapeHtml(message.text || "")}${attachment}${message.editedAt ? '<span class="edited-label">edited</span>' : ""}</div>`;
-  return `<div class="message-row ${mine ? "mine" : ""}">${avatar(person, mine ? "" : state.active?.id)}<div class="bubble-wrap">${actions}${content}${reactions ? `<div class="message-reactions">${reactions}</div>` : ""}<div class="meta"><span>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>${mine ? (message.seenAt ? "<span>Seen</span>" : "<span>✓✓</span>") : ""}</div></div></div>`;
+  return `<div class="message-row ${mine ? "mine" : ""}" data-message-id="${messageId}">${avatar(person, mine ? "" : state.active?.id)}<div class="bubble-wrap">${actions}${content}${reactions ? `<div class="message-reactions">${reactions}</div>` : ""}<div class="meta"><span>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>${mine ? (message.seenAt ? "<span>Seen</span>" : "<span>✓✓</span>") : ""}</div></div></div>`;
 }
 async function loadUsers() {
   const result = await request("/users"); state.users = result.users;
-  if (!state.active || (!allBots().some(bot => bot.id === state.active.id) && !state.users.some(user => user.id === state.active.id))) state.active = allBots()[0];
-  if (state.active.bot) state.messages = botMessages[state.active.id] || [];
+  const friendsResult = await request("/friends"); state.friends = friendsResult.users;
+  const groupResult = await request("/groups"); state.groups = groupResult.groups.map(group => ({ ...group, group: true }));
+  const savedActive = [...allBots(), ...state.users, ...state.friends, ...state.groups].find(item => item.id === state.savedActiveId);
+  if (savedActive) state.active = savedActive;
+  if (!state.active || (!allBots().some(bot => bot.id === state.active.id) && !state.users.some(user => user.id === state.active.id) && !state.friends.some(user => user.id === state.active.id) && !state.groups.some(group => group.id === state.active.id))) state.active = allBots()[0];
+  if (state.active.group) state.messages = (await request(`/groups/${state.active.id}/messages`)).messages;
+  else if (state.active.bot) state.messages = botMessages[state.active.id] || [];
   else state.messages = await decryptMessages((await request(`/messages/${state.active.id}`)).messages);
   render();
 }
@@ -255,6 +317,10 @@ function connectSocket() {
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
   state.socket.onmessage = async event => {
     const incoming = JSON.parse(event.data);
+    if (incoming.type === "group-message" && state.active?.id === incoming.message.groupId) {
+      state.messages.push(incoming.message);
+      render();
+    }
     if (incoming.type === "message") {
       const sender = [...state.users, ...allBots()].find(user => user.id === incoming.message.senderId);
       if (state.active?.id === incoming.message.senderId) { state.messages.push(await decryptMessage(incoming.message)); render(); }
@@ -323,6 +389,79 @@ function attachEvents() {
     localStorage.setItem("piya-sidebar-width", String(state.sidebarWidth));
     localStorage.setItem("piya-sidebar-collapsed", String(state.sidebarCollapsed));
     localStorage.setItem("piya-sidebar-hidden", String(state.sidebarHidden));
+    saveUiState();
+    render();
+  }));
+  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {
+    state.view = button.dataset.view;
+    saveUiState();
+    render();
+  }));
+  document.querySelector("[data-toggle-friend]")?.addEventListener("click", async event => {
+    const friendId = event.currentTarget.dataset.toggleFriend;
+    const isFriend = state.friends.some(user => user.id === friendId);
+    await request(`/friends/${friendId}`, { method: "PATCH", body: JSON.stringify({ friend: !isFriend }) });
+    await loadUsers();
+    showToast(isFriend ? "Removed from friends" : "Added to friends");
+  });
+  document.querySelectorAll("[data-open-group]").forEach(button => button.addEventListener("click", () => {
+    state.groupCreator = true;
+    state.groupType = "";
+    render();
+  }));
+  document.querySelectorAll('input[name="groupType"]').forEach(input => input.addEventListener("change", event => {
+    state.groupType = event.currentTarget.value;
+    document.querySelectorAll(".group-types label").forEach(label => label.classList.toggle("selected", label.querySelector("input") === event.currentTarget));
+  }));
+  document.querySelector("[data-close-group]")?.addEventListener("click", () => {
+    state.groupCreator = false;
+    render();
+  });
+  document.querySelector("[data-close-members]")?.addEventListener("click", () => {
+    state.memberManager = null;
+    render();
+  });
+  document.querySelector("#member-form")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const memberIds = [...new FormData(event.currentTarget).getAll("members")];
+    if (!memberIds.length) return showToast("Select at least one friend.");
+    const result = await request(`/groups/${state.memberManager}/members`, { method: "PATCH", body: JSON.stringify({ memberIds }) });
+    state.groups = state.groups.map(group => group.id === result.group.id ? { ...result.group, group: true } : group);
+    state.active = state.groups.find(group => group.id === result.group.id);
+    state.memberManager = null;
+    render();
+  });
+  const activeGroup = state.active?.group && state.groups.find(group => group.id === state.active.id);
+  if (activeGroup && activeGroup.ownerId === state.user.id && !document.querySelector("[data-open-members]")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "primary-btn compact-btn group-members-button";
+    button.dataset.openMembers = activeGroup.id;
+    button.textContent = "Add members";
+    document.querySelector(".info-profile")?.append(button);
+  }
+  document.querySelector("[data-open-members]")?.addEventListener("click", () => {
+    state.memberManager = document.querySelector("[data-open-members]").dataset.openMembers;
+    render();
+  });
+  document.querySelector("#group-form")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await request("/groups", { method: "POST", body: JSON.stringify({ name: form.get("groupName"), type: form.get("groupType"), memberIds: form.getAll("members") }) });
+    state.groups = [...state.groups, { ...result.group, group: true }];
+    state.active = { ...result.group, group: true };
+    state.messages = [];
+    state.groupCreator = false;
+    state.view = "chats";
+    saveUiState();
+    render();
+  });
+  document.querySelectorAll("[data-group-id]").forEach(item => item.addEventListener("click", async () => {
+    state.active = state.groups.find(group => group.id === item.dataset.groupId);
+    if (!state.active) return;
+    state.messages = (await request(`/groups/${state.active.id}/messages`)).messages;
+    state.view = "chats";
+    saveUiState();
     render();
   }));
   document.querySelector("[data-auth-toggle]")?.addEventListener("click", () => { state.authMode = state.authMode === "login" ? "register" : "login"; render(); });
@@ -355,11 +494,11 @@ function attachEvents() {
   document.querySelector("#profile-picture-input")?.addEventListener("change", async event => {
     const file = event.target.files[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) return alert("Profile pictures must be images.");
-    if (file.size > 8_000_000) return alert("The profile picture must be smaller than 8 MB.");
+    if (!file.type.startsWith("image/")) return showWarning("Profile pictures must be images.");
+    if (file.size > 8_000_000) return showWarning("The profile picture must be smaller than 8 MB.");
     const reader = new FileReader();
     reader.onload = () => { state.profileDraftPicture = reader.result; render(); };
-    reader.onerror = () => alert("Could not read that picture.");
+    reader.onerror = () => showWarning("Could not read that picture.");
     reader.readAsDataURL(file);
   });
   document.querySelector("[data-save-profile]")?.addEventListener("click", async () => {
@@ -381,7 +520,7 @@ function attachEvents() {
   });
   document.querySelector("#profile-media-input")?.addEventListener("change", async event => {
     const files = [...event.target.files];
-    if (state.profileDraftMedia.length + files.length > 4) return alert("You can add up to 4 profile images or videos.");
+    if (state.profileDraftMedia.length + files.length > 4) return showWarning("You can add up to 4 profile images or videos.");
     try {
       const additions = await Promise.all(files.map(async file => {
         if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) throw new Error("Only images and videos are supported.");
@@ -403,7 +542,7 @@ function attachEvents() {
       }));
       state.profileDraftMedia = [...state.profileDraftMedia, ...additions];
       render();
-    } catch (error) { alert(error.message); }
+    } catch (error) { showWarning(error.message); }
   });
   document.querySelectorAll("[data-remove-media]").forEach(button => button.addEventListener("click", event => {
     state.profileDraftMedia.splice(Number(event.currentTarget.dataset.removeMedia), 1);
@@ -480,11 +619,11 @@ function attachEvents() {
     document.querySelector("#onboarding-picture")?.addEventListener("change", event => {
       const file = event.target.files[0];
       if (!file) return;
-      if (!file.type.startsWith("image/")) return alert("Profile pictures must be images.");
-      if (file.size > 8_000_000) return alert("The profile picture must be smaller than 8 MB.");
+      if (!file.type.startsWith("image/")) return showWarning("Profile pictures must be images.");
+      if (file.size > 8_000_000) return showWarning("The profile picture must be smaller than 8 MB.");
       const reader = new FileReader();
       reader.onload = () => { state.user.profilePic = reader.result; localStorage.setItem("orbit-user", JSON.stringify(state.user)); render(); };
-      reader.onerror = () => alert("Could not read that picture.");
+      reader.onerror = () => showWarning("Could not read that picture.");
       reader.readAsDataURL(file);
     });
     document.querySelector("[data-onboarding-next]")?.addEventListener("click", () => saveStep());
@@ -505,13 +644,26 @@ function attachEvents() {
     localStorage.removeItem("orbit-token"); localStorage.removeItem("orbit-user"); localStorage.removeItem("orbit-onboarding-step");
     state.user = null; state.socket?.close(); state.settingsOpen = false; render();
   });
-  document.querySelector("[data-help]")?.addEventListener("click", () => alert("Help & support\n\nSearch for a username to start a chat. Select a conversation to send messages and files. Open Settings to edit your profile or change read receipts."));
-  document.querySelector("[data-about]")?.addEventListener("click", () => alert("Piya — Sab Bolenge\n\nA private real-time chat app for staying close to the people who matter."));
+  document.querySelector("[data-help]")?.addEventListener("click", () => showToast("Help: search for a username to start a chat, then select a conversation to send messages and files."));
+  document.querySelector("[data-about]")?.addEventListener("click", () => showToast("Piya — Sab Bolenge is a private real-time chat app."));
   document.querySelector("[data-receipts]")?.addEventListener("click", async () => {
     const result = await request("/settings", { method: "PATCH", body: JSON.stringify({ readReceipts: state.user.readReceipts === false }) });
     state.user = result.user; localStorage.setItem("orbit-user", JSON.stringify(state.user)); render();
   });
-  document.querySelectorAll("[data-user]").forEach(item => item.addEventListener("click", async () => { state.active = [...allBots(), ...state.users, ...state.searchResults].find(user => user.id === item.dataset.user); if (!state.active) return; if (!state.active.bot) addRecentSearch(state.active); state.unread[state.active.id] = 0; state.messageMenuId = null; state.editingMessageId = null; state.searchResults = []; state.messages = state.active.bot ? (botMessages[state.active.id] || []) : await decryptMessages((await request(`/messages/${state.active.id}`)).messages); render(); }));
+  document.querySelectorAll("[data-user]").forEach(item => item.addEventListener("click", async () => { state.active = [...allBots(), ...state.users, ...state.friends, ...state.searchResults].find(user => user.id === item.dataset.user); if (!state.active) return; if (!state.active.bot) addRecentSearch(state.active); state.unread[state.active.id] = 0; state.messageMenuId = null; state.editingMessageId = null; state.searchResults = []; state.messages = state.active.bot ? (botMessages[state.active.id] || []) : await decryptMessages((await request(`/messages/${state.active.id}`)).messages); state.view = "chats"; saveUiState(); render(); }));
+  document.querySelectorAll("[data-shared-type]").forEach(button => button.addEventListener("click", () => {
+    state.sharedFilter = button.dataset.sharedType;
+    render();
+  }));
+  document.querySelector("[data-close-shared]")?.addEventListener("click", () => {
+    state.sharedFilter = null;
+    render();
+  });
+  document.querySelectorAll("[data-shared-message]").forEach(button => button.addEventListener("click", () => {
+    state.sharedFilter = null;
+    render();
+    requestAnimationFrame(() => document.querySelector(`[data-message-id="${button.dataset.sharedMessage}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }));
   const searchUsers = async (input, focusGlobal = false) => {
     const query = input.value.trim();
     state.searchResults = query.length ? (await request(`/users/search?q=${encodeURIComponent(query)}`)).users : [];
@@ -537,6 +689,13 @@ function attachEvents() {
   document.querySelector("[data-delete-conversation]")?.addEventListener("click", async () => {
     if (!state.active) return;
     if (!confirm("Delete this entire conversation for both people?")) return;
+    if (state.active.group) {
+      await request("/group-messages", { method: "POST", body: JSON.stringify({ groupId: state.active.id, text, attachment: state.pendingAttachment }) });
+      state.pendingAttachment = null;
+      state.messages = (await request(`/groups/${state.active.id}/messages`)).messages;
+      render();
+      return;
+    }
     if (state.active.bot) {
       delete botMessages[state.active.id];
       localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages));
@@ -575,6 +734,7 @@ function attachEvents() {
       }
       botMessages[state.active.id] = state.messages;
       localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages));
+      saveAccountState();
     } else {
       const result = await request(`/messages/${message.id}`, { method: "PATCH", body: JSON.stringify({ reaction: button.dataset.reaction }) });
       state.messages = state.messages.map(item => item.id === message.id ? result.message : item);
@@ -614,6 +774,7 @@ function attachEvents() {
       message.editedAt = new Date().toISOString();
       botMessages[state.active.id] = state.messages;
       localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages));
+      saveAccountState();
     } else {
       const encrypted = await encryptPayload({ text: input.value.trim(), attachment: message.attachment || null }, state.active);
       const result = await request(`/messages/${message.id}`, { method: "PATCH", body: JSON.stringify({ encrypted }) });
@@ -628,6 +789,7 @@ function attachEvents() {
     if (state.active.bot) {
       botMessages[state.active.id] = (botMessages[state.active.id] || []).filter(message => messageKey(message) !== messageId);
       localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages));
+      saveAccountState();
     } else await request(`/messages/${messageId}`, { method: "DELETE" });
     state.messages = state.messages.filter(message => messageKey(message) !== messageId);
     state.messageMenuId = null;
@@ -640,16 +802,14 @@ function attachEvents() {
     event.preventDefault(); const input = document.getElementById("message-input"); const text = input.value.trim(); if (!text && !state.pendingAttachment) return;
     if (state.active.bot) {
       const list = botMessages[state.active.id] || [];
-      list.push({ id: `local-${crypto.randomUUID()}`, senderId: "me", receiverId: state.active.id, text, createdAt: new Date().toISOString() });
-      botMessages[state.active.id] = list; localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages)); state.messages = list; render();
+      list.push({ id: `local-${crypto.randomUUID()}`, senderId: "me", receiverId: state.active.id, text, attachment: state.pendingAttachment, createdAt: new Date().toISOString() });
+      botMessages[state.active.id] = list; localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages)); saveAccountState(); state.messages = list; render();
       try {
         const result = await request("/ai-chat", { method: "POST", body: JSON.stringify({ text }) });
         const reply = { id: `local-${crypto.randomUUID()}`, senderId: state.active.id, receiverId: "me", text: result.text, createdAt: new Date().toISOString() };
-        botMessages[state.active.id].push(reply); localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages)); state.messages = botMessages[state.active.id]; render();
-      } catch (error) {
-        const reply = { senderId: state.active.id, receiverId: "me", text: error.message, createdAt: new Date().toISOString(), error: true };
-        botMessages[state.active.id].push(reply); localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages)); state.messages = botMessages[state.active.id]; render();
-      }
+        botMessages[state.active.id].push(reply); localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages)); saveAccountState(); state.messages = botMessages[state.active.id]; render();
+      } catch (error) { showWarning(error.message); }
+      state.pendingAttachment = null;
       return;
     }
     const encrypted = await encryptPayload({ text, attachment: state.pendingAttachment }, state.active);
@@ -664,10 +824,10 @@ function attachEvents() {
   document.querySelector("#file-input")?.addEventListener("change", event => {
     const file = event.target.files[0];
     if (!file) return;
-    if (file.size > 15_000_000) return alert("Files must be smaller than 15 MB.");
+    if (file.size > 15_000_000) return showWarning("Files must be smaller than 15 MB.");
     const reader = new FileReader();
     reader.onload = () => { state.pendingAttachment = { name: file.name, type: file.type || "application/octet-stream", size: file.size, data: reader.result }; render(); };
-    reader.onerror = () => alert("Could not read that file.");
+    reader.onerror = () => showWarning("Could not read that file.");
     reader.readAsDataURL(file);
   });
   document.querySelector("[data-remove-attachment]")?.addEventListener("click", () => { state.pendingAttachment = null; render(); });
@@ -676,7 +836,27 @@ function attachEvents() {
 
 async function boot() {
   if (!state.user || !token()) return render();
-  try { const result = await request("/me"); state.user = result.user; await ensureCryptoIdentity(); if (state.user.onboardingComplete === false && state.onboarding) render(); else { state.onboarding = 0; localStorage.removeItem("orbit-onboarding-step"); connectSocket(); await loadUsers(); } } catch { localStorage.clear(); state.user = null; render(); }
+  try {
+    const result = await request("/me");
+    state.user = result.user;
+    const saved = await request("/account-state");
+    const account = saved.state || {};
+    state.customBots = Array.isArray(account.customBots) ? account.customBots : state.customBots;
+    botMessages = account.botMessages && typeof account.botMessages === "object" ? account.botMessages : botMessages;
+    state.recentSearches = Array.isArray(account.recentSearches) ? account.recentSearches : state.recentSearches;
+    state.view = ["chats", "work", "friends"].includes(account.view) ? account.view : state.view;
+    state.sidebarWidth = Number(account.sidebarWidth) || state.sidebarWidth;
+    state.sidebarCollapsed = account.sidebarCollapsed === true;
+    state.sidebarHidden = account.sidebarHidden === true;
+    state.savedActiveId = account.activeId || null;
+    localStorage.setItem("piya-account-state", JSON.stringify(accountStatePayload()));
+    localStorage.setItem("piya-custom-bots", JSON.stringify(state.customBots));
+    localStorage.setItem("orbit-bot-messages", JSON.stringify(botMessages));
+    localStorage.setItem("piya-recent-searches", JSON.stringify(state.recentSearches));
+    await ensureCryptoIdentity();
+    if (state.user.onboardingComplete === false && state.onboarding) render();
+    else { state.onboarding = 0; localStorage.removeItem("orbit-onboarding-step"); connectSocket(); await loadUsers(); }
+  } catch { localStorage.clear(); state.user = null; render(); }
 }
 if (!history.state?.piyaView) history.replaceState({ piyaView: "home" }, "", window.location.href);
 window.addEventListener("popstate", event => {
@@ -686,5 +866,12 @@ window.addEventListener("popstate", event => {
     return;
   }
   closeProfile(true);
+});
+window.addEventListener("unhandledrejection", event => {
+  event.preventDefault();
+  showWarning(event.reason?.message || "Something went wrong. Please try again.");
+});
+window.addEventListener("error", event => {
+  if (event.error) showWarning("Something went wrong. Please try again.");
 });
 boot();

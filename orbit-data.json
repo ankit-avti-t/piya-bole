@@ -19,7 +19,36 @@
         "bodyCount": false
       },
       "onboardingComplete": true,
-      "lastSeenAt": "2026-10-09T12:32:07.808Z"
+      "lastSeenAt": "2026-10-09T15:19:20.019Z",
+      "publicKey": {
+        "crv": "P-256",
+        "ext": true,
+        "key_ops": [],
+        "kty": "EC",
+        "x": "PP3RbAacwpLVIeiDKqIYH8cp1irOnt6SR8K8PjCOaOg",
+        "y": "mTtVQ6FKU12Tx_91kmrjCqE4YmDAB6UEORcwfZzeoD8"
+      },
+      "accountState": {
+        "customBots": [],
+        "botMessages": {
+          "bot-orbit": [
+            {
+              "id": "local-9ff66c35-9a3f-4a2c-8606-e6b78c6989fa",
+              "senderId": "me",
+              "receiverId": "bot-orbit",
+              "text": "hi",
+              "attachment": null,
+              "createdAt": "2026-10-09T16:37:26.969Z"
+            }
+          ]
+        },
+        "recentSearches": [],
+        "view": "chats",
+        "sidebarWidth": 335,
+        "sidebarCollapsed": false,
+        "sidebarHidden": false,
+        "activeId": "bot-orbit"
+      }
     },
     {
       "id": "4b470fdd-9079-4fce-8e50-41eefa66cfb7",
@@ -40,7 +69,9 @@
         "bodyCount": false
       },
       "onboardingComplete": true,
-      "lastSeenAt": "2026-10-09T06:24:54.832Z"
+      "lastSeenAt": "2026-10-09T06:24:54.832Z",
+      "publicKey": null,
+      "accountState": {}
     },
     {
       "id": "ae235f4b-3706-4ec4-93bf-be5bf7add57d",
@@ -61,7 +92,40 @@
         "gender": true,
         "bio": true,
         "bodyCount": false
-      }
+      },
+      "publicKey": null,
+      "accountState": {}
+    },
+    {
+      "id": "4a2bb9e9-0302-49a1-a85a-456d47e8670b",
+      "name": "ankit",
+      "username": "ankit5",
+      "dateOfBirth": "2008-01-29",
+      "publicKey": {
+        "crv": "P-256",
+        "ext": true,
+        "key_ops": [],
+        "kty": "EC",
+        "x": "4_h7UTGsEVXSxxPwuJBdo1fqpi_2w4grGd1S06O578s",
+        "y": "to0NG7ArDLRbiWYJGprM4pirl8nkfmQcYDFMrvM715U"
+      },
+      "password": "a87d4c9f1fc4d086149407dfe34b425a9d1c399a46b137d6521529efed4a94f5",
+      "onboardingComplete": true,
+      "lastSeenAt": "2026-10-09T15:01:13.555Z",
+      "readReceipts": true,
+      "gender": "",
+      "bio": "",
+      "bodyCount": "",
+      "avatar": "",
+      "profilePic": "",
+      "profilePublic": true,
+      "media": [],
+      "visibility": {
+        "gender": true,
+        "bio": true,
+        "bodyCount": false
+      },
+      "accountState": {}
     }
   ],
   "messages": [
@@ -142,6 +206,28 @@
       "attachment": null,
       "createdAt": "2026-10-09T12:24:19.302Z",
       "seenAt": null
+    }
+  ],
+  "groups": [
+    {
+      "id": "cad43a98-2093-41db-9df2-0ce3422aecc3",
+      "name": "dheeraj",
+      "type": "private",
+      "ownerId": "b4273517-3640-4cdd-8a86-3e22f618c264",
+      "memberIds": [
+        "b4273517-3640-4cdd-8a86-3e22f618c264"
+      ],
+      "createdAt": "2026-10-09T15:31:03.293Z"
+    },
+    {
+      "id": "a773c937-b1c9-4257-b5ca-f3c0dcc2964d",
+      "name": "dheeraj",
+      "type": "private",
+      "ownerId": "b4273517-3640-4cdd-8a86-3e22f618c264",
+      "memberIds": [
+        "b4273517-3640-4cdd-8a86-3e22f618c264"
+      ],
+      "createdAt": "2026-10-09T15:35:05.353Z"
     }
   ]
 }

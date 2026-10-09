@@ -10,15 +10,28 @@ const DATA_FILE = path.join(__dirname, "orbit-data.json");
 const sessions = new Map();
 const sockets = new Map();
 const data = loadData();
+loadDotEnv();
 const gemini = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
+const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+function loadDotEnv() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || match[1] in process.env) continue;
+    process.env[match[1]] = match[2].replace(/^(['"])(.*)\1$/, "$2");
+  }
+}
 
 function loadData() {
   try {
     const stored = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-    stored.users = (stored.users || []).map(user => ({ ...user, publicKey: typeof user.publicKey === "object" ? user.publicKey : null, onboardingComplete: user.onboardingComplete !== false, lastSeenAt: user.lastSeenAt || null, readReceipts: user.readReceipts !== false, gender: user.gender || "", bio: user.bio || "", bodyCount: user.bodyCount || "", avatar: typeof user.avatar === "string" ? user.avatar : "", profilePic: typeof user.profilePic === "string" ? user.profilePic : "", profilePublic: user.profilePublic !== false, media: Array.isArray(user.media) ? user.media : [], visibility: { gender: user.visibility?.gender !== false, bio: user.visibility?.bio !== false, bodyCount: user.visibility?.bodyCount === true }, username: user.username || user.email?.split("@")[0] || user.name.toLowerCase().replace(/\s+/g, "") }));
+    stored.users = (stored.users || []).map(user => ({ ...user, publicKey: typeof user.publicKey === "object" ? user.publicKey : null, accountState: user.accountState && typeof user.accountState === "object" ? user.accountState : {}, onboardingComplete: user.onboardingComplete !== false, lastSeenAt: user.lastSeenAt || null, readReceipts: user.readReceipts !== false, gender: user.gender || "", bio: user.bio || "", bodyCount: user.bodyCount || "", avatar: typeof user.avatar === "string" ? user.avatar : "", profilePic: typeof user.profilePic === "string" ? user.profilePic : "", profilePublic: user.profilePublic !== false, media: Array.isArray(user.media) ? user.media : [], visibility: { gender: user.visibility?.gender !== false, bio: user.visibility?.bio !== false, bodyCount: user.visibility?.bodyCount === true }, username: user.username || user.email?.split("@")[0] || user.name.toLowerCase().replace(/\s+/g, "") }));
+    stored.groups = Array.isArray(stored.groups) ? stored.groups : [];
     return stored;
   }
-  catch { return { users: [], messages: [] }; }
+  catch { return { users: [], messages: [], groups: [] }; }
 }
 function saveData() { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 function id() { return crypto.randomUUID(); }
@@ -56,6 +69,12 @@ function connectedUserIds(userId) {
     return [];
   }));
 }
+function groupForUser(groupId, userId) {
+  return data.groups.find(group => group.id === groupId && (group.type === "open" || group.memberIds.includes(userId)));
+}
+function publicGroup(group) {
+  return { id: group.id, name: group.name, type: group.type, ownerId: group.ownerId, memberIds: group.memberIds, createdAt: group.createdAt };
+}
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type, Authorization" }); return res.end(); }
@@ -77,7 +96,7 @@ const server = http.createServer(async (req, res) => {
         let user = data.users.find(item => item.username === username);
         if (req.url.endsWith("register")) {
           if (user) return json(res, 409, { error: "That username is already taken." });
-          user = { id: id(), name: input.name.trim(), username, dateOfBirth: input.dateOfBirth, publicKey: null, password: hash(input.password), onboardingComplete: false, lastSeenAt: null, readReceipts: true, gender: "", bio: "", bodyCount: "", avatar: "", profilePic: "", profilePublic: true, media: [], visibility: { gender: true, bio: true, bodyCount: false } }; data.users.push(user); saveData();
+          user = { id: id(), name: input.name.trim(), username, dateOfBirth: input.dateOfBirth, publicKey: null, accountState: {}, password: hash(input.password), onboardingComplete: false, lastSeenAt: null, readReceipts: true, gender: "", bio: "", bodyCount: "", avatar: "", profilePic: "", profilePublic: true, media: [], visibility: { gender: true, bio: true, bodyCount: false } }; data.users.push(user); saveData();
         } else if (!user) return json(res, 404, { error: "That username does not exist." });
         else if (user.password !== hash(input.password)) return json(res, 401, { error: "Incorrect username or password." });
         const token = id(); sessions.set(token, user); return json(res, 200, { token, user: publicUser(user, true) });
@@ -85,6 +104,16 @@ const server = http.createServer(async (req, res) => {
       const user = userFromRequest(req);
       if (!user) return json(res, 401, { error: "Please sign in first." });
       if (req.method === "GET" && req.url === "/api/me") return json(res, 200, { user: publicUser(user, true) });
+      if (req.method === "GET" && req.url === "/api/account-state") return json(res, 200, { state: user.accountState || {} });
+      if (req.method === "PATCH" && req.url === "/api/account-state") {
+        const input = await body(req);
+        if (!input.state || typeof input.state !== "object" || Array.isArray(input.state)) return json(res, 400, { error: "Invalid account state." });
+        const serialized = JSON.stringify(input.state);
+        if (serialized.length > 30_000_000) return json(res, 413, { error: "Account state is too large." });
+        user.accountState = input.state;
+        saveData();
+        return json(res, 200, { state: user.accountState });
+      }
       if (req.method === "PATCH" && req.url === "/api/crypto-key") {
         const input = await body(req);
         if (!input.publicKey || input.publicKey.kty !== "EC" || input.publicKey.crv !== "P-256" || typeof input.publicKey.x !== "string" || typeof input.publicKey.y !== "string") return json(res, 400, { error: "Invalid encryption key." });
@@ -99,6 +128,63 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "GET" && req.url === "/api/users") {
         const connectedIds = connectedUserIds(user.id);
         return json(res, 200, { users: data.users.filter(item => item.id !== user.id && connectedIds.has(item.id)).map(publicUser) });
+      }
+      if (req.method === "GET" && req.url === "/api/friends") {
+        const friendIds = Array.isArray(user.accountState?.friendIds) ? user.accountState.friendIds : [];
+        return json(res, 200, { users: data.users.filter(item => item.id !== user.id && friendIds.includes(item.id)).map(publicUser) });
+      }
+      if (req.method === "PATCH" && req.url.startsWith("/api/friends/")) {
+        const friendId = req.url.split("/").pop();
+        if (friendId === user.id || !data.users.some(item => item.id === friendId)) return json(res, 404, { error: "Friend not found." });
+        const input = await body(req);
+        if (typeof input.friend !== "boolean") return json(res, 400, { error: "A friend setting is required." });
+        const friendIds = Array.isArray(user.accountState?.friendIds) ? user.accountState.friendIds : [];
+        user.accountState = { ...(user.accountState || {}), friendIds: input.friend ? [...new Set([...friendIds, friendId])] : friendIds.filter(id => id !== friendId) };
+        saveData();
+        return json(res, 200, { friend: input.friend });
+      }
+      if (req.method === "GET" && req.url === "/api/groups") {
+        return json(res, 200, { groups: data.groups.filter(group => group.type === "open" || group.memberIds.includes(user.id)).map(publicGroup) });
+      }
+      if (req.method === "POST" && req.url === "/api/groups") {
+        const input = await body(req);
+        const type = input.type === "open" ? "open" : input.type === "private" ? "private" : "";
+        const name = typeof input.name === "string" ? input.name.trim().slice(0, 60) : "";
+        const selected = Array.isArray(input.memberIds) ? input.memberIds.filter(id => typeof id === "string") : [];
+        if (!name || !type) return json(res, 400, { error: "Choose a group type and enter a group name." });
+        const memberIds = [...new Set([user.id, ...selected])].filter(memberId => data.users.some(item => item.id === memberId));
+        const group = { id: id(), name, type, ownerId: user.id, memberIds, createdAt: new Date().toISOString() };
+        data.groups.push(group); saveData();
+        return json(res, 201, { group: publicGroup(group) });
+      }
+      if (req.method === "PATCH" && req.url.startsWith("/api/groups/") && req.url.endsWith("/members")) {
+        const groupId = req.url.split("/")[3];
+        const group = data.groups.find(item => item.id === groupId);
+        if (!group) return json(res, 404, { error: "Group not found." });
+        if (group.ownerId !== user.id) return json(res, 403, { error: "Only the group owner can add members." });
+        const input = await body(req);
+        const additions = Array.isArray(input.memberIds) ? input.memberIds.filter(memberId => data.users.some(item => item.id === memberId)) : [];
+        group.memberIds = [...new Set([user.id, ...group.memberIds, ...additions])];
+        saveData();
+        return json(res, 200, { group: publicGroup(group) });
+      }
+      if (req.method === "GET" && req.url.startsWith("/api/groups/") && req.url.endsWith("/messages")) {
+        const groupId = req.url.split("/")[3];
+        if (!groupForUser(groupId, user.id)) return json(res, 403, { error: "You are not a member of this group." });
+        return json(res, 200, { messages: data.messages.filter(message => message.groupId === groupId).map(message => ({ ...message, _reactors: undefined })) });
+      }
+      if (req.method === "POST" && req.url === "/api/group-messages") {
+        const input = await body(req);
+        const group = groupForUser(input.groupId, user.id);
+        if (!group) return json(res, 403, { error: "You are not a member of this group." });
+        const text = typeof input.text === "string" ? input.text.trim().slice(0, 4000) : "";
+        const attachment = input.attachment;
+        if (!text && !attachment) return json(res, 400, { error: "A message or attachment is required." });
+        if (attachment && (typeof attachment.name !== "string" || typeof attachment.type !== "string" || typeof attachment.data !== "string" || !attachment.data.startsWith("data:") || attachment.size > 15_000_000)) return json(res, 400, { error: "Attachments must be valid files smaller than 15 MB." });
+        const message = { id: id(), groupId: group.id, senderId: user.id, text, attachment: attachment || null, reactions: {}, createdAt: new Date().toISOString(), seenAt: null };
+        data.messages.push(message); saveData();
+        group.memberIds.filter(memberId => memberId !== user.id).forEach(memberId => sendTo(memberId, { type: "group-message", message }));
+        return json(res, 201, { message });
       }
       if (req.method === "GET" && req.url.startsWith("/api/messages/")) {
         const otherId = req.url.split("/").pop();
@@ -219,13 +305,16 @@ const server = http.createServer(async (req, res) => {
         if (!gemini) return json(res, 503, { error: "Gemini is not configured yet. Add GEMINI_API_KEY and restart the server." });
         try {
           const result = await gemini.models.generateContent({
-            model: "gemini-3.8-flash",
+            model: geminiModel,
             contents: input.text.trim(),
             config: { systemInstruction: "You are Piya AI, a warm, concise assistant inside a private chat app. Be helpful and conversational. Keep replies under 120 words unless the user asks for detail." }
           });
           return json(res, 200, { text: result.text || "I could not generate a response this time." });
         } catch (error) {
           console.error("Gemini request failed:", error);
+          if (error?.status === 400 || String(error?.message).includes("API_KEY_INVALID")) {
+            return json(res, 502, { error: "The Gemini API key is invalid. Replace GEMINI_API_KEY in .env and restart Piya." });
+          }
           return json(res, 502, { error: "Piya AI is temporarily unavailable. Please try again in a moment." });
         }
       }
